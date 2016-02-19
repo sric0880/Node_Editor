@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using System;
 using System.Collections.Generic;
 
 namespace NodeEditorFramework
@@ -80,6 +81,23 @@ namespace NodeEditorFramework
 		#endregion
 
 		#region Value
+
+		/// <summary>
+		/// Gets the value of the connection or null. If possible, use strongly typed version instead.
+		/// </summary>
+		public object GetValue (Type type)
+		{
+			return connection != null? connection.GetValue (type) : null;
+		}
+
+		/// <summary>
+		/// Sets the value of the connection if the type matches. If possible, use strongly typed version instead.
+		/// </summary>
+		public void SetValue (object value)
+		{
+			if (connection != null)
+				connection.SetValue (value);
+		}
 
 		/// <summary>
 		/// Gets the value of the connection or the default value

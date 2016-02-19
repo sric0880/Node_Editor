@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using System;
 using System.Collections.Generic;
 
 namespace NodeEditorFramework 
@@ -82,7 +83,33 @@ namespace NodeEditorFramework
 		#region Value
 		
 		public bool IsValueNull { get { return value == null; } }
-		
+
+		/// <summary>
+		/// Gets the output value if the type matches or null. If possible, use strongly typed version instead.
+		/// </summary>
+		public object GetValue (Type type)
+		{
+			if (typeData.Type == null)
+				CheckType ();
+			if (typeData.Type == type)
+				return value;
+			Debug.LogError ("Trying to GetValue<" + type.FullName + "> for Output Type: " + typeData.Type.FullName);
+			return null;
+		}
+
+		/// <summary>
+		/// Sets the output value if the type matches. If possible, use strongly typed version instead.
+		/// </summary>
+		public void SetValue (object Value)
+		{
+			if (typeData.Type == null)
+				CheckType ();
+			if (typeData.Type == Value.GetType ())
+				value = Value;
+			else
+				Debug.LogError ("Trying to SetValue<" + Value.GetType ().FullName + "> for Output Type: " + typeData.Type.FullName);
+		}
+
 		/// <summary>
 		/// Gets the output value if the type matches
 		/// </summary>

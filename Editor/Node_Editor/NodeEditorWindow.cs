@@ -49,7 +49,7 @@ namespace NodeEditorFramework
 		/// Handle opening canvas when double-clicking asset
 		/// </summary>
 		[UnityEditor.Callbacks.OnOpenAsset(1)]
-		public static bool AutoOpenCanvas (int instanceID, int line) 
+		private static bool AutoOpenCanvas (int instanceID, int line) 
 		{
 			if (Selection.activeObject != null && Selection.activeObject.GetType () == typeof(NodeCanvas))
 			{
@@ -61,7 +61,7 @@ namespace NodeEditorFramework
 			return false;
 		}
 
-		public void OnDestroy () 
+		private void OnDestroy () 
 		{
 			NodeEditor.ClientRepaints -= _editor.Repaint;
 			//SaveCache ();
@@ -140,7 +140,7 @@ namespace NodeEditorFramework
 			{
 				NodeEditor.DrawCanvas (mainNodeCanvas, mainEditorState);
 			}
-			catch (Exception e)
+			catch (UnityException e)
 			{ // on exceptions in drawing flush the canvas to avoid locking the ui.
 				NewNodeCanvas ();
 				NodeEditor.ReInit (true);

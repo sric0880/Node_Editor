@@ -7,13 +7,14 @@ using NodeEditorFramework.Utilities;
 
 namespace NodeEditorFramework
 {
+
 	/// <summary>
 	/// Represents a Transition between two nodes [states] with conditions and a transition time. WIP
 	/// </summary>
 	[Serializable]
 	public class Transition : ScriptableObject
 	{
-		// Unfortunately, unity cannot serialize properties, so we create a serialized backing variable
+		// Start and End nodes; Create serialized backing variable to make this serializeable
 		public Node startNode { get { return _startNode; } internal set { _startNode = value; } }
 		[SerializeField]
 		internal Node _startNode;
@@ -21,13 +22,17 @@ namespace NodeEditorFramework
 		[SerializeField]
 		internal Node _endNode;
 
+		// Conditions
+		[System.Serializable]
+		public class TransitionCondition : UnityFunc<Transition, bool> { public TransitionCondition (System.Delegate func) : base (func) {} }
 		[SerializeField]
 		public List<TransitionCondition> conditions = new List<TransitionCondition> ();
 		//public List<Func<Transition, bool>> conditions;
 
-		public bool isTransitioning { get; private set; }
-		private float startTransitioningTime;
 		public float transitionTime = 2; // In seconds
+		public bool isTransitioning { get; private set; }
+		[NonSerialized]
+		private float startTransitioningTime;
 
 		private static float totalTime { get {
 				#if UNITY_EDITOR

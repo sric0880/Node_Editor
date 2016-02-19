@@ -73,9 +73,9 @@ namespace NodeEditorFramework.Utilities
 			selectedLabel.normal.background = NodeEditorFramework.Utilities.RTEditorGUI.ColorToTex (1, new Color (0.4f, 0.4f, 0.4f));
 		}
 		
-		public void Show (Rect pos)
+		public void Show (Vector2 pos)
 		{
-			position = pos;
+			position = new Rect (pos.x, pos.y, 0f, 0f);
 			selectedPath = "";
 			OverlayGUI.currentPopup = this;
 		}
@@ -340,7 +340,12 @@ namespace NodeEditorFramework.Utilities
 		
 		public void ShowAsContext ()
 		{
-			popup.Show (new Rect (Event.current.mousePosition.x, Event.current.mousePosition.y, 0f, 0f));
+			popup.Show (new Vector2 (Event.current.mousePosition.x, Event.current.mousePosition.y));
+		}
+
+		public void Show (Vector2 pos)
+		{
+			popup.Show (pos);
 		}
 		
 		public void AddItem (GUIContent content, bool on, PopupMenu.MenuFunctionData func, object userData)
