@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using System.Reflection;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 
 using Object = UnityEngine.Object;
 
@@ -16,38 +17,114 @@ namespace NodeEditorFramework.Utilities
 	[Serializable]
 	public class UnityFuncBase
 	{
-		// Following are the serialized method details
-		[SerializeField]
-		private FuncSerializedType _targetType = null;
-		[SerializeField]
-		private Object _targetObject = null;
-		[SerializeField]
-		private string _methodName;
-		[SerializeField]
-		private FuncSerializedType _returnType;
-		[SerializeField]
-		private FuncSerializedType[] _argumentTypes;
+		#region Serialized Data
 
-		public UnityEventCallState callState = UnityEventCallState.EditorAndRuntime;
-
-		// Accessors
-		public bool isDefinitionComplete { get { return !String.IsNullOrEmpty (_methodName); } }
-		public bool isInstanceMethod { get { return _targetObject != null; } }
-		public Type TargetType { get { return _targetType != null && _targetType.Validate ()? _targetType.GetRuntimeType () : null; } }
-		public Object TargetObject { get { return _targetObject; } }
-		public string MethodName { get { return _methodName; } }
-		public Type ReturnType { get { return _returnType.GetRuntimeType (); }}
-		public Type[] ArgumentTypes { get { return _argumentTypes.Select ((FuncSerializedType argType) => argType.GetRuntimeType ()).ToArray (); } }
-		public BindingFlags AllFunctionBindingFlags { get { return BindingFlags.Public | BindingFlags.NonPublic | (isInstanceMethod? BindingFlags.Instance : BindingFlags.Static); } }
-
-		// Runtime deserialized data
-		[NonSerialized]
-		protected Delegate runtimeDelegate;
-		[NonSerialized]
-		private MethodInfo method;
+		// Command definition data get seperate accessors so they can't be changed from outside and auto-properties cannot be serialized
 
 		/// <summary>
-		/// Dynamically invokes the func represented by this UnityFunc.
+		/// Gets the deserialized targetType of the method or field
+		/// </summary>
+		public Type TargetType { get { return _targetType != null && _targetType.Validate ()? _targetType.GetRuntimeType () : null; } }
+		[SerializeField]
+		private SerializedType _targetType = null;
+
+		/// <summary>
+		/// Gets the targetObject of the method or field. If null the function cannot be invoked.
+		/// </summary>
+		public Object TargetObject { get { return _targetObject; } }
+		[SerializeField]
+		private Object _targetObject = null;
+
+		/// <summary>
+		/// Gets the name of the method or field
+		/// </summary>
+		public string CommandName { get { return _commandName; } }
+		[SerializeField]
+		private string _commandName;
+
+		/// <summary>
+		/// When this UnityFunc representates is a field, this defines whether it gets or sets the value of it, else it throws
+		/// </summary>
+		public bool FieldGetAccessor { get { 
+				if (_isMethod) throw new UnityException ("Cannot request field accessor type of a method!"); 
+				return _fieldGetAccessor; } }
+		[SerializeField]
+		private bool _fieldGetAccessor;
+
+		/// <summary>
+		/// Gets whether this UnityFunc representates a method or a field
+		/// </summary>
+		public bool isMethod { get { return _isMethod; } }
+		[SerializeField]
+		private bool _isMethod;
+
+		/// <summary>
+		/// Gets whether this method or field is static
+		/// </summary>
+		public bool isStatic { get { return _isStatic; } }
+		[SerializeField]
+		private bool _isStatic;
+
+		/// <summary>
+		/// Gets the deserialized returnType of the method or field(get)
+		/// </summary>
+		public Type ReturnType { get { return _returnType != null && _returnType.Validate ()? _returnType.GetRuntimeType () : null; } }
+		[SerializeField]
+		private SerializedType _returnType;
+
+		/// <summary>
+		/// Gets the deserialized argumentTypes of the method or field(set)
+		/// </summary>
+		public Type[] ArgumentTypes { get { return _argumentTypes.Select ((SerializedType argType) => argType.GetRuntimeType ()).ToArray (); } }
+		[SerializeField]
+		private SerializedType[] _argumentTypes;
+
+		#endregion
+
+		#region Deserialized Data
+
+		/// <summary>
+		/// Gets the deserialized delegate represented by this UnityFunc, be it method or field
+		/// </summary>
+		[NonSerialized]
+		protected Delegate runtimeDelegate;
+
+		/// <summary>
+		/// Gets the deserialized method represented by this UnityFunc. 
+		/// Throws when this UnityFunc representates a field
+		/// </summary>
+		public MethodInfo RuntimeMethod { get { 
+				if (!_isMethod) throw new UnityException ("This UnityFunc is defined as a field!");
+				if (_method == null) DeserializeCommand (true); 
+				return _method; } }
+		[NonSerialized]
+		private MethodInfo _method;
+
+		/// <summary>
+		/// Gets the deserialized field represented by this UnityFunc. 
+		/// Throws when this UnityFunc representates a method
+		/// </summary>
+		public FieldInfo RuntimeField { get { 
+				if (_isMethod) throw new UnityException ("This UnityFunc is defined as a method!");
+				if (_field == null) DeserializeCommand (true); 
+				return _field; } }
+		[NonSerialized]
+		private FieldInfo _field;
+
+		#endregion
+
+		/// <summary>
+		/// Gets whether the method or field represented by this UnityFunc has been deserialized
+		/// </summary>
+		public bool isDeserialized { get { return _isMethod? _method != null : _field != null; } }
+
+		/// <summary>
+		/// Gets whether the definition of this method or field is correct
+		/// </summary>
+		private bool isCommandDefinitionValid { get { return !String.IsNullOrEmpty (_commandName) && _returnType != null && _returnType.Validate () && _argumentTypes != null; } }
+
+		/// <summary>
+		/// Dynamically invokes the method or field represented by this UnityFunc
 		/// </summary>
 		public object DynamicInvoke (params object[] parameter) 
 		{
@@ -58,7 +135,7 @@ namespace NodeEditorFramework.Utilities
 			return null;
 		}
 
-		#region Constructors
+		#region Creation and retargeting
 
 		/// <summary>
 		/// Creates a serializeable UnityFunc from the passed delegate
@@ -69,130 +146,82 @@ namespace NodeEditorFramework.Utilities
 				throw new ArgumentException ("Func " + func + " is anonymous!");
 			if (func.Target != null && !(func.Target is Object))
 				throw new ArgumentException ("Target of func " + func + " is not serializeable, it has to inherit from UnityEngine.Object!");
-
+			
 			Type[] argumentTypes = func.Method.GetParameters ().Select ((ParameterInfo param) => param.ParameterType).ToArray ();
-			InternalSetup (func.Method.DeclaringType, (Object)func.Target, func.Method.Name, func.Method.ReturnType, argumentTypes);
+			InternalSetup (func.Method.DeclaringType, (Object)func.Target, func.Method.Name, func.Method.ReturnType, argumentTypes, true, func.Method.IsStatic);
 		}
 
 		/// <summary>
 		/// Creates a serializeable UnityFunc from the passed method on the targetObject
 		/// </summary>
-		public UnityFuncBase (Object targetObject, MethodInfo methodInfo) 
+		public UnityFuncBase (Object targetObject, MethodInfo method) 
 		{
-			Type[] argumentTypes = methodInfo.GetParameters ().Select ((ParameterInfo param) => param.ParameterType).ToArray ();
-			InternalSetup (methodInfo.DeclaringType, targetObject, methodInfo.Name, methodInfo.ReturnType, argumentTypes);
+			Type[] argumentTypes = method.GetParameters ().Select ((ParameterInfo param) => param.ParameterType).ToArray ();
+			InternalSetup (method.DeclaringType, targetObject, method.Name, method.ReturnType, argumentTypes, true, method.IsStatic);
 		}
 
 		/// <summary>
-		/// Creates a serializeable UnityFunc from the passed method on the targetType.
-		/// When the method with the specified types could not be found, it'll throw.
-		/// If targetObject is specified, the method is assumed to be an instance method, else a static function
+		/// Creates a serializeable UnityFunc from the passed method. If method is not static, the targetObject has to be set before invoking
 		/// </summary>
-		public UnityFuncBase (Type targetType, Object targetObject, string methodName, Type returnType, Type[] argumentTypes) 
+		public UnityFuncBase (MethodInfo method) : this (null, method) {}
+
+		/// <summary>
+		/// Creates a serializeable UnityFunc from the passed field on the targetObject
+		/// </summary>
+		public UnityFuncBase (Object targetObject, FieldInfo field, bool getAccessor) 
 		{
-			InternalSetup (targetType, targetObject, methodName, returnType, argumentTypes);
+			_fieldGetAccessor = getAccessor;
+			if (getAccessor) // Get
+				InternalSetup (field.DeclaringType, targetObject, field.Name, field.FieldType, new Type[0], false, field.IsStatic);
+			else // Set
+				InternalSetup (field.DeclaringType, targetObject, field.Name, null, new Type[] { field.FieldType }, false, field.IsStatic);
 		}
 
 		/// <summary>
-		/// Creates an empty serializeable Delegate
+		/// Creates a serializeable UnityFunc from the passed field. If field is not static, the targetObject has to be set before invoking
 		/// </summary>
-		public UnityFuncBase () 
-		{
-			_targetObject = null;
-			_methodName = "";
-			_returnType = null;
-			_argumentTypes = new FuncSerializedType[0];
-		}
+		public UnityFuncBase (FieldInfo field, bool getAccessor) : this (null, field, getAccessor) {}
 
 		/// <summary>
-		/// Setup of the UnityFunc. Internal.
+		/// Internal setup of the UnityFunc
 		/// </summary>
-		private void InternalSetup (Type targetType, Object targetObject, string methodName, Type returnType, Type[] argumentTypes) 
+		private void InternalSetup (Type targetType, Object targetObject, string commandName, Type returnType, Type[] argumentTypes, bool isMethod, bool isStatic) 
 		{
-			_targetType = new FuncSerializedType (targetType);
-			_targetObject = targetObject;
-			_methodName = methodName;
-			_returnType = new FuncSerializedType (returnType);
+			// Command definition
+			_targetType = new SerializedType (targetType);
+			if (targetObject != null && targetType.IsAssignableFrom (targetObject.GetType ()))
+				_targetObject = targetObject;
+			_commandName = commandName;
+			_isMethod = isMethod;
+			_isStatic = isStatic;
 
-			_argumentTypes = new FuncSerializedType[argumentTypes.Length];
+			// Types
+			if (returnType == null)
+				returnType = typeof(void);
+			_returnType = new SerializedType (returnType);
+			_argumentTypes = new SerializedType[argumentTypes.Length];
 			for (int argCnt = 0; argCnt < argumentTypes.Length; argCnt++)
-				_argumentTypes[argCnt] = new FuncSerializedType (argumentTypes[argCnt]);
-			
-			CreateDelegate ();
+				_argumentTypes[argCnt] = new SerializedType (argumentTypes[argCnt]);
 		}
 
-		#endregion
-
-		#region Reassignements
-
 		/// <summary>
-		/// Reassigns the target object of this UnityFunc. If needed it reassigns the type, too.
-		/// It is possible to switch from static to instance and vice-versa this way.
+		/// Reassigns the targetObject of this UnityFunc. Has to be assignable from the preselected targetType and has to be null when the command is static
 		/// </summary>
 		public void ReassignTargetObject (Object newTargetObject) 
 		{
-			Debug.Log ("Reassigning target object to " + (newTargetObject == null? "null" : newTargetObject.name));
-			if (newTargetObject != null)
-				ReassignTargetType (newTargetObject.GetType ());
+			if (newTargetObject != null) 
+			{
+				if (isStatic)
+					throw new UnityException ("Cannot assign targetObject to a static command!");
+				else if (!TargetType.IsAssignableFrom (newTargetObject.GetType ()))
+					throw new UnityException ("Cannot assign targetObject of type " + newTargetObject.GetType ().FullName + " to UnityFunc of type " + TargetType.FullName + "!");
+			}
+			if (newTargetObject == null && !isStatic)
+				Debug.LogWarning ("Assigning null targetObject to an instance command! UnityFunc won't be invokeable!");
 
 			_targetObject = newTargetObject;
-			DeserializeMethod (false);
-			if (method == null)
-			{
-				Debug.Log ("Failed to create method with new target object!");
-				_methodName = "";
-				_returnType = null;
-				_argumentTypes = null;
-			}
-		}
-
-		/// <summary>
-		/// Reassigns the target type of this UnityFunc. Has to be of the same type or assigneable from the type of this UnityFunc.
-		/// It is possible to switch from static to instance provided that the method exists.
-		/// </summary>
-		public void ReassignTargetType (Type newTargetType) 
-		{
-			Debug.Log ("Reassigning target type to " + newTargetType.Name);
-			if (_targetType == null || !_targetType.Validate  () || _targetType.GetRuntimeType ().IsAssignableFrom (newTargetType))
-			{ // Have to clear this delegate
-				Debug.Log ("Had to wipe method data for new target type!");
-				_targetObject = null;
-				_methodName = "";
-				_returnType = null;
-				_argumentTypes = null;
-			}
-			_targetType = new FuncSerializedType (newTargetType);
-		}
-
-		/// <summary>
-		/// Reassigns the target type of this UnityFunc. Has to be of the same type or assigneable from the type of this UnityFunc.
-		/// It is possible to switch from static to instance provided that the method exists.
-		/// </summary>
-		public void ReassignMethod (string newMethodName, Type returnType, Type[] argumentTypes) 
-		{
-			if (_methodName != newMethodName)
-			{
-				_methodName = newMethodName;
-				_returnType = new FuncSerializedType (returnType);
-
-				_argumentTypes = new FuncSerializedType[argumentTypes.Length];
-				for (int argCnt = 0; argCnt < argumentTypes.Length; argCnt++)
-					_argumentTypes[argCnt] = new FuncSerializedType (argumentTypes[argCnt]);
-
-				DeserializeMethod (false);
-				if (method == null)
-				{
-					_methodName = "";
-					_returnType = null;
-					_argumentTypes = null;
-					throw new UnityException ("Invalid method data on UnityFunc " + _methodName  + "!");
-				}
-			}
-		}
-
-		private bool hasFullMethodData () 
-		{
-			return !String.IsNullOrEmpty (_methodName) && _returnType != null && _returnType.Validate () &&_argumentTypes != null;
+			// Reset deserialized delegate so it gets created new with the new targetObject when needed
+			runtimeDelegate = null;
 		}
 
 		#endregion
@@ -205,130 +234,158 @@ namespace NodeEditorFramework.Utilities
 		/// </summary>
 		protected Delegate CreateDelegate ()
 		{
-			if (callState == UnityEventCallState.Off || (callState == UnityEventCallState.RuntimeOnly && !Application.isPlaying))
-				return null;
-
 			// Make sure method is deserialized
-			if (method == null)
-				DeserializeMethod (true);
-			// Create a delegate from the method
-			return runtimeDelegate = (isInstanceMethod? Delegate.CreateDelegate (typeof (Func<>), _targetObject, method) : Delegate.CreateDelegate (typeof (Func<>), method));
+			if (!isDeserialized)
+				DeserializeCommand (true);
+			
+			if (!isStatic && _targetObject == null)
+				throw new UnityException ("Cannot create delegate without a targetObject! Make sure to reassign a targetObject to UnityFunc " + _commandName + "!");
+			if (isMethod) 
+			{ // Create a delegate from the method
+				if (isStatic)
+				{
+					Debug.Log (_method.Name + " method is fetched for the action node! ReturnType is " + _method.ReturnType.FullName + " (should be " + ReturnType.FullName + ")!");
+					runtimeDelegate = Delegate.CreateDelegate (typeof (Func<>), _method, true);
+				}
+				else if (_targetObject != null)
+					runtimeDelegate = Delegate.CreateDelegate (typeof (Func<>), _targetObject, _method, true);
+			}
+			else
+			{ // compile a delegate from the field
+				ParameterExpression paramExp = Expression.Parameter (TargetType, "");
+				MemberExpression fieldExp = Expression.Field (paramExp, _field);
+				runtimeDelegate = Expression.Lambda (typeof(Func<>), fieldExp, paramExp).Compile ();
+			}
+			return runtimeDelegate;
 		}
 
 		/// <summary>
 		/// Fetches the methodInfo this UnityFunc representates. Call only once on initialisation!
 		/// </summary>
-		private void DeserializeMethod (bool throwOnBindFailure)
+		private void DeserializeCommand (bool throwOnBindFailure)
 		{
-			if (!hasFullMethodData ())
+			if (!isCommandDefinitionValid)
 			{
 				if (throwOnBindFailure)
-					throw new UnityException ("Invalid method data on UnityFunc " + _methodName  + "!");
+					throw new UnityException ("Invalid " + (_isMethod? "method" : "field") + " definition in UnityFunc " + _commandName  + "!");
 				return;
 			}
-			// Get the argument types
-			Type[] runtimeArgumentTypes = new Type[_argumentTypes.Length];
-			for (int argCnt = 0; argCnt < _argumentTypes.Length; argCnt++) 
-				runtimeArgumentTypes[argCnt] = _argumentTypes[argCnt].GetRuntimeType ();
 			// Get the method Info that this UnityFunc representates
-			method = GetValidMethodInfo (_targetType.GetRuntimeType (), _methodName, _returnType.GetRuntimeType (), runtimeArgumentTypes, AllFunctionBindingFlags);
-			if (method == null && throwOnBindFailure)
-				throw new UnityException ("Invalid method data on UnityFunc " + _methodName  + "!");
+			if (_isMethod)
+			{
+				_method = GetValidMethodInfo (TargetType, _commandName, ReturnType, ArgumentTypes, isStatic);
+				if (_method == null && throwOnBindFailure)
+					throw new UnityException ("Invalid method definition in UnityFunc " + _commandName  + "!");
+			}
+			else
+			{
+				_field = GetValidFieldInfo (TargetType, _commandName, isStatic);
+				if (_field == null && throwOnBindFailure)
+					throw new UnityException ("Invalid field definition in UnityFunc " + _commandName  + "!");
+			}
 		}
 
 		/// <summary>
-		/// Gets the valid MethodInfo of the method on targetObj called functionName with the specified returnType (may be null incase of void) and argumentTypes
+		/// Gets the valid MethodInfo of the method on targetObj called functionName with the specified returnType (may be null in case of void) and argumentTypes
 		/// </summary>
-		private static MethodInfo GetValidMethodInfo (Type targetType, string methodName, Type returnType, Type[] argumentTypes, BindingFlags flags)
+		public static FieldInfo GetValidFieldInfo (Type targetType, string fieldName, bool isStatic)
 		{
-			if (returnType == null) // Account for void return type, too
-				returnType = typeof(void);
-			while (targetType != null && targetType != typeof(object) && targetType != typeof(void)) 
-			{ // Search targetObj's type hierarchy for the functionName until we hit the object base type or found it (incase the function is inherited)
-				MethodInfo method = targetType.GetMethod (methodName, flags, null, argumentTypes, null);
-				if (method != null && method.ReturnType == returnType) 
-				{ // This type contains a method with the specified name, arguments and return type
-					ParameterInfo[] parameters = method.GetParameters ();
-					bool flag = true;
-					for (int paramCnt = 0; paramCnt < parameters.Length; paramCnt++) 
-					{ // Check whether the arguments match in that they are primitives (isn't this already sorted out in getMethod?)
-						if (!(flag = (argumentTypes [paramCnt].IsPrimitive == parameters [paramCnt].ParameterType.IsPrimitive)))
-							break; // Else, this is not the right method
-					}
-					if (flag) // We found the method!
-						return method;
-				}
-				// Move up in the type hierarchy (function was inherited)
-				targetType = targetType.BaseType;
-			}
-			return null; // No valid method found on targetObj that has this functionName
+			return targetType.GetField (fieldName, 
+				BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy | (isStatic? BindingFlags.Static : BindingFlags.Instance)); // No valid method found on targetObj that has this functionName
 		}
 
-		#endregion
-
-		#region Serialized Type
-
-		[Serializable]
-		private class FuncSerializedType : ISerializationCallbackReceiver
+		/// <summary>
+		/// Gets the valid MethodInfo of the method on targetObj called functionName with the specified returnType (may be null in case of void) and argumentTypes
+		/// </summary>
+		public static MethodInfo GetValidMethodInfo (Type targetType, string methodName, Type returnType, Type[] argumentTypes, bool isStatic)
 		{
-			[SerializeField]
-			public string argAssemblyTypeName;
+			BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy | (isStatic? BindingFlags.Static : BindingFlags.Instance);
+			return targetType.GetMethod (methodName, flags, null, argumentTypes, null);
 
-			[NonSerialized]
-			private Type runtimeType;
-
-			public FuncSerializedType (Type type)
-			{
-				Debug.Log ("Creating serializedtype " + type.Name + " with tidied name out of " + type.AssemblyQualifiedName + "!");
-				SetType (type);
-			}
-
-			public void SetType (Type type)
-			{
-				runtimeType = type;
-				argAssemblyTypeName = type.AssemblyQualifiedName;
-				if (String.IsNullOrEmpty (argAssemblyTypeName))
-					throw new UnityException ("Could not setup type as it does not contain serializeable data!");
-				Debug.Log ("Creating serializedtype " + runtimeType.Name + " with tidied name out of " + runtimeType.AssemblyQualifiedName + "!");
-				TidyAssemblyTypeName ();
-				Debug.Log ("Created serializedtype " + runtimeType.Name + " with tidied name " + argAssemblyTypeName + " out of " + runtimeType.AssemblyQualifiedName);
-			}
-
-			public void OnAfterDeserialize ()
-			{
-				TidyAssemblyTypeName ();
-			}
-
-			public void OnBeforeSerialize ()
-			{
-				TidyAssemblyTypeName ();
-			}
-
-			private void TidyAssemblyTypeName ()
-			{
-				if (!Validate ())
-					return;
-				argAssemblyTypeName = argAssemblyTypeName.Split (',')[0];
-//				argAssemblyTypeName = Regex.Replace (argAssemblyTypeName, @", Version=\d+.\d+.\d+.\d+", String.Empty);
-//				argAssemblyTypeName = Regex.Replace (argAssemblyTypeName, @", Culture=\w+", String.Empty);
-//				argAssemblyTypeName = Regex.Replace (argAssemblyTypeName, @", PublicKeyToken=\w+", String.Empty);
-			}
-
-			public bool Validate () 
-			{
-				return !String.IsNullOrEmpty (argAssemblyTypeName);
-			}
-
-			public Type GetRuntimeType () 
-			{
-				if (string.IsNullOrEmpty (argAssemblyTypeName))
-					throw new UnityException ("Could not deserialize type as it does not contain serialized data!");
-				return runtimeType ?? (runtimeType = Type.GetType (argAssemblyTypeName, false) ?? typeof(Object));
-			}
+			// Unity default implementation
+//			if (returnType == null) // Account for void return type, too
+//				returnType = typeof(void);
+//			BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy | (isStatic? BindingFlags.Static : BindingFlags.Instance);
+//			while (targetType != null && targetType != typeof(object) && targetType != typeof(void)) 
+//			{ // Search targetObj's type hierarchy for the functionName until we hit the object base type or found it (incase the function is inherited)
+//				MethodInfo method = targetType.GetMethod (methodName, flags, null, argumentTypes, null);
+//				if (method != null && method.ReturnType == returnType) 
+//				{ // This type contains a method with the specified name, arguments and return type
+//					ParameterInfo[] parameters = method.GetParameters ();
+//					bool flag = true;
+//					for (int paramCnt = 0; paramCnt < parameters.Length; paramCnt++) 
+//					{ // Check whether the arguments match in that they are primitives (isn't this already sorted out in getMethod?)
+//						if (!(flag = (argumentTypes [paramCnt].IsPrimitive == parameters [paramCnt].ParameterType.IsPrimitive)))
+//							break; // Else, this is not the right method
+//					}
+//					if (flag) // We found the method!
+//						return method;
+//				}
+//				// Move up in the type hierarchy (function was inherited)
+//				targetType = targetType.BaseType;
+//			}
+//			return null; // No valid method found on targetObj that has this functionName
 		}
 
 		#endregion
 	}
+
+	#region Serialized Type
+
+	[Serializable]
+	public class SerializedType // : ISerializationCallbackReceiver
+	{
+		[SerializeField]
+		private string argAssemblyTypeName;
+
+		[NonSerialized]
+		private Type runtimeType;
+
+		public SerializedType (Type type)
+		{
+			SetType (type);
+		}
+
+		public void SetType (Type type)
+		{
+			runtimeType = type;
+			argAssemblyTypeName = type.FullName;
+			if (String.IsNullOrEmpty (argAssemblyTypeName))
+				throw new UnityException ("Could not setup type as it does not contain serializeable data!");
+//			argAssemblyTypeName = TidyAssemblyTypeName (argAssemblyTypeName);
+		}
+
+//		public void OnAfterDeserialize ()
+//		{
+//			argAssemblyTypeName = TidyAssemblyTypeName (argAssemblyTypeName);
+//		}
+//
+//		public void OnBeforeSerialize ()
+//		{
+//			argAssemblyTypeName = TidyAssemblyTypeName (argAssemblyTypeName);
+//		}
+
+//		internal static string TidyAssemblyTypeName (string typeName)
+//		{
+//			if (String.IsNullOrEmpty (typeName))
+//				return null;
+//			return typeName.Split (',')[0];
+//		}
+
+		public bool Validate () 
+		{
+			return !String.IsNullOrEmpty (argAssemblyTypeName);
+		}
+
+		public Type GetRuntimeType () 
+		{
+			if (string.IsNullOrEmpty (argAssemblyTypeName))
+				throw new UnityException ("Could not deserialize type as it does not contain serialized data!");
+			return runtimeType ?? (runtimeType = Type.GetType (argAssemblyTypeName, false) ?? typeof(Object));
+		}
+	}
+
+	#endregion
 
 	#region Parameter Variations
 
@@ -339,8 +396,11 @@ namespace NodeEditorFramework.Utilities
 		private Func<T1, T2, T3, T4, TR> runtimeFunc;
 
 		// Retarget constructors to base
-		public UnityFunc (Object targetObject, MethodInfo methodInfo) : base (targetObject, methodInfo) {}
 		public UnityFunc (Delegate func) : base (func) {}
+		public UnityFunc (Object targetObject, MethodInfo method) : base (targetObject, method) {}
+		public UnityFunc (MethodInfo method) : base (method) {}
+		public UnityFunc (Object targetObject, FieldInfo field, bool isGetAccessor) : base (targetObject, field, isGetAccessor) {}
+		public UnityFunc (FieldInfo field, bool isGetAccessor) : base (field, isGetAccessor) {}
 
 		public TR Invoke (T1 arg1, T2 arg2, T3 arg3, T4 arg4) 
 		{
@@ -367,8 +427,10 @@ namespace NodeEditorFramework.Utilities
 
 		// Retarget constructors to base
 		public UnityFunc (Delegate func) : base (func) {}
-		public UnityFunc (Object targetObject, MethodInfo methodInfo) : base (targetObject, methodInfo) {}
-		public UnityFunc (Type targetType, Object targetObject, string methodName, Type returnType, Type[] argumentTypes) : base (targetType, targetObject, methodName, returnType, argumentTypes) {}
+		public UnityFunc (Object targetObject, MethodInfo method) : base (targetObject, method) {}
+		public UnityFunc (MethodInfo method) : base (method) {}
+		public UnityFunc (Object targetObject, FieldInfo field, bool isGetAccessor) : base (targetObject, field, isGetAccessor) {}
+		public UnityFunc (FieldInfo field, bool isGetAccessor) : base (field, isGetAccessor) {}
 
 		public TR Invoke (T1 arg1, T2 arg2, T3 arg3) 
 		{
@@ -395,8 +457,10 @@ namespace NodeEditorFramework.Utilities
 
 		// Retarget constructors to base
 		public UnityFunc (Delegate func) : base (func) {}
-		public UnityFunc (Object targetObject, MethodInfo methodInfo) : base (targetObject, methodInfo) {}
-		public UnityFunc (Type targetType, Object targetObject, string methodName, Type returnType, Type[] argumentTypes) : base (targetType, targetObject, methodName, returnType, argumentTypes) {}
+		public UnityFunc (Object targetObject, MethodInfo method) : base (targetObject, method) {}
+		public UnityFunc (MethodInfo method) : base (method) {}
+		public UnityFunc (Object targetObject, FieldInfo field, bool isGetAccessor) : base (targetObject, field, isGetAccessor) {}
+		public UnityFunc (FieldInfo field, bool isGetAccessor) : base (field, isGetAccessor) {}
 
 		public TR Invoke (T1 arg1, T2 arg2) 
 		{
@@ -423,8 +487,10 @@ namespace NodeEditorFramework.Utilities
 
 		// Retarget constructors to base
 		public UnityFunc (Delegate func) : base (func) {}
-		public UnityFunc (Object targetObject, MethodInfo methodInfo) : base (targetObject, methodInfo) {}
-		public UnityFunc (Type targetType, Object targetObject, string methodName, Type returnType, Type[] argumentTypes) : base (targetType, targetObject, methodName, returnType, argumentTypes) {}
+		public UnityFunc (Object targetObject, MethodInfo method) : base (targetObject, method) {}
+		public UnityFunc (MethodInfo method) : base (method) {}
+		public UnityFunc (Object targetObject, FieldInfo field, bool isGetAccessor) : base (targetObject, field, isGetAccessor) {}
+		public UnityFunc (FieldInfo field, bool isGetAccessor) : base (field, isGetAccessor) {}
 
 		public TR Invoke (T1 arg) 
 		{
@@ -451,8 +517,10 @@ namespace NodeEditorFramework.Utilities
 
 		// Retarget constructors to base
 		public UnityFunc (Delegate func) : base (func) {}
-		public UnityFunc (Object targetObject, MethodInfo methodInfo) : base (targetObject, methodInfo) {}
-		public UnityFunc (Type targetType, Object targetObject, string methodName, Type returnType, Type[] argumentTypes) : base (targetType, targetObject, methodName, returnType, argumentTypes) {}
+		public UnityFunc (Object targetObject, MethodInfo method) : base (targetObject, method) {}
+		public UnityFunc (MethodInfo method) : base (method) {}
+		public UnityFunc (Object targetObject, FieldInfo field, bool isGetAccessor) : base (targetObject, field, isGetAccessor) {}
+		public UnityFunc (FieldInfo field, bool isGetAccessor) : base (field, isGetAccessor) {}
 
 		public TR Invoke () 
 		{

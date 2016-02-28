@@ -1,17 +1,14 @@
 ﻿using UnityEngine;
-using System.Collections;
 using NodeEditorFramework;
 
 [System.Serializable]
-[Node (false, "Float/Display")]
+[Node (false, "Utility/Display")]
 public class DisplayNode : Node 
 {
 	public const string ID = "displayNode";
 	public override string GetID { get { return ID; } }
 
-	[HideInInspector]
-	public bool assigned = false;
-	public float value = 0;
+	public object value = null;
 
 	public override Node Create (Vector2 pos) 
 	{ // This function has to be registered in Node_Editor.ContextCallback
@@ -20,28 +17,22 @@ public class DisplayNode : Node
 		node.name = "Display Node";
 		node.rect = new Rect (pos.x, pos.y, 150, 50);
 		
-		NodeInput.Create (node, "Value", "Float");
+		NodeInput.Create (node, "Value", "Object");
 
 		return node;
 	}
 	
 	protected internal override void NodeGUI () 
 	{
-		Inputs [0].DisplayLayout (new GUIContent ("Value : " + (assigned? value.ToString () : ""), "The input value to display"));
+		string valueString = "NULL";//= value != null? ((Object)value != null? ((Object)value).name : value.ToString ()) : "NULL";
+		if (value != null)
+			valueString = (value as Object != null)? (value as Object).name : value.ToString ();
+		Inputs [0].DisplayLayout (new GUIContent ("Value : " + valueString, "The input value to display"));
 	}
 	
 	public override bool Calculate () 
 	{
-		if (!allInputsReady ()) 
-		{
-			value = 0;
-			assigned = false;
-			return false;
-		}
-
-		value = Inputs[0].connection.GetValue<float>();
-		assigned = true;
-
+		value = Inputs [0].connection == null? null : Inputs[0].connection.GetValue (typeof(object));
 		return true;
 	}
 }

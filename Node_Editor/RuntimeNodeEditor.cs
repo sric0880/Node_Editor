@@ -56,7 +56,7 @@ public class RuntimeNodeEditor : MonoBehaviour
 
 				if (!screenSize && specifiedRootRect.max != specifiedRootRect.min) GUI.EndGroup ();
 			}
-			catch (Exception e)
+			catch (UnityException e)
 			{ // on exceptions in drawing flush the canvas to avoid locking the ui.
 				NewNodeCanvas ();
 				NodeEditor.ReInit (true);

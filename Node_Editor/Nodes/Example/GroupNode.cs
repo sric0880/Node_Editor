@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using NodeEditorFramework;
 
 [System.Serializable]
-[Node (true, "Group")]
+[Node (false, "Example/Group")]
 public class GroupNode : Node 
 {
 	public const string ID = "groupNode";
@@ -20,7 +20,7 @@ public class GroupNode : Node
 	public Rect openedRect { get { return new Rect (rect.center.x - canvasSize.x/2 - borderWidth - 100, rect.y, canvasSize.x + borderWidth*2 + 200, 62 + canvasSize.y + borderWidth); } }
 	
 	public override Node Create (Vector2 pos) 
-	{ // This function has to be registered in Node_Editor.ContextCallback
+	{
 		GroupNode node = CreateInstance <GroupNode> ();
 		
 		node.name = "Group Node";
@@ -163,13 +163,13 @@ public class GroupNode : Node
 			{ // Input Node
 				Debug.Log ("Adopting input node!");
 				foreach (NodeOutput output in node.Outputs)
-					Inputs.Add (NodeInput.Create (node, output.name, output.type));
+					Inputs.Add (NodeInput.Create (node, output.name, output.typeID));
 			}
 			else if (node.Outputs.Count == 0)
 			{ // Output node
 				Debug.Log ("Adopting output node!");
 				foreach (NodeInput input in node.Inputs)
-					Outputs.Add (NodeOutput.Create (node, input.name, input.type));
+					Outputs.Add (NodeOutput.Create (node, input.name, input.typeID));
 			}
 		}
 	}

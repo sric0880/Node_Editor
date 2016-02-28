@@ -198,7 +198,7 @@ namespace NodeEditorFramework
 				Vector2 startPos = output.GetGUIKnob ().center;
 				Vector2 endPos = ScreenToGUIPos (mousePos) + curEditorState.zoomPos * curEditorState.zoom;
 				Vector2 endDir = output.GetDirection ();
-				NodeEditorGUI.DrawConnection (startPos, endDir, endPos, NodeEditorGUI.GetSecondConnectionVector (startPos, endPos, endDir), ConnectionTypes.GetTypeData (output.type).col);
+				NodeEditorGUI.DrawConnection (startPos, endDir, endPos, NodeEditorGUI.GetSecondConnectionVector (startPos, endPos, endDir), output.typeData.col);
 				RepaintClients ();
 			}
 			if (curEditorState.makeTransition != null)
@@ -290,7 +290,7 @@ namespace NodeEditorFramework
 		public static Rect CanvasGUIToScreenRect (NodeEditorState editorState, Rect rect) 
 		{
 			rect.position += editorState.zoomPos;
-			rect = GUIScaleUtility.ScaleRect (rect, editorState.zoomPos, 
+			rect = GUIScaleUtility.Scale (rect, editorState.zoomPos, 
 					editorState.parentEditor != null? new Vector2 (1/(editorState.parentEditor.zoom*editorState.zoom), 1/(editorState.parentEditor.zoom*editorState.zoom)) : 
 														new Vector2 (1/editorState.zoom, 1/editorState.zoom));
 			rect.position += editorState.canvasRect.position;
@@ -435,7 +435,7 @@ namespace NodeEditorFramework
 							{ // Iterate through all nodes and check for compability
 								for (int inputCnt = 0; inputCnt < node.Inputs.Count; inputCnt++)
 								{
-									if (node.Inputs[inputCnt].type == curEditorState.connectOutput.type)
+									if (node.Inputs[inputCnt].CanApplyConnection (curEditorState.connectOutput))
 									{
 										menu.AddItem (new GUIContent ("Add " + NodeTypes.nodes[node].adress), false, ContextCallback, new NodeEditorMenuCallback (node.GetID, curNodeCanvas, curEditorState));
 										break;
@@ -469,7 +469,7 @@ namespace NodeEditorFramework
 				{ // Apply Drawn connections/transition on node
 					if (curEditorState.makeTransition != null)
 					{ // Apply a connection if theres a clicked input
-						Node.CreateTransition (curEditorState.makeTransition, curEditorState.focusedNode);
+						Transition.Create (curEditorState.makeTransition, curEditorState.focusedNode);
 					}
 					if (curEditorState.connectOutput != null) 
 					{ // Apply a connection if theres a clicked input
@@ -643,7 +643,7 @@ namespace NodeEditorFramework
 				}
 				else if (node.AcceptsTranstitions && curEditorState.makeTransition != null) 
 				{
-					Node.CreateTransition (curEditorState.makeTransition, node);
+					Transition.Create (curEditorState.makeTransition, node);
 				}
 
 				curEditorState.makeTransition = null;

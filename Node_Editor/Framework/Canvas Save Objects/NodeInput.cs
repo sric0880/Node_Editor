@@ -2,6 +2,8 @@
 using System;
 using System.Collections.Generic;
 
+using NodeEditorFramework.Utilities;
+
 namespace NodeEditorFramework
 {
 	/// <summary>
@@ -14,13 +16,13 @@ namespace NodeEditorFramework
 
 		// NodeInput Members
 		public NodeOutput connection;
-		public string type;
-		[System.NonSerialized]
-		internal TypeData typeData;
+		public string typeID;
+		private TypeData _typeData;
+		internal TypeData typeData { get { CheckType (); return _typeData; } }
 		// Multiple connections
 //		public List<NodeOutput> connections;
 
-		#region Contructors
+		#region General
 
 		/// <summary>
 		/// Creates a new NodeInput in NodeBody of specified type
@@ -44,10 +46,17 @@ namespace NodeEditorFramework
 		public static NodeInput Create (Node nodeBody, string inputName, string inputType, NodeSide nodeSide, float sidePosition)
 		{
 			NodeInput input = CreateInstance <NodeInput> ();
-			input.type = inputType;
+			input.typeID = inputType;
 			input.InitBase (nodeBody, nodeSide, sidePosition, inputName);
 			nodeBody.Inputs.Add (input);
 			return input;
+		}
+
+		public override void Delete () 
+		{
+			RemoveConnection ();
+			body.Inputs.Remove (this);
+			base.Delete ();
 		}
 
 		#endregion
@@ -74,13 +83,21 @@ namespace NodeEditorFramework
 
 		private void CheckType () 
 		{
-			if (typeData.declaration == null || typeData.Type == null) 
-				typeData = ConnectionTypes.GetTypeData (type);
+			if (_typeData == null || !_typeData.isValid ()) 
+				_typeData = ConnectionTypes.GetTypeData (typeID);
 		}
 
 		#endregion
 
 		#region Value
+
+		/// <summary>
+		/// Gets the value of the connection anonymously. Not advised as it may lead to unwanted behaviour!
+		/// </summary>
+		public object GetValue ()
+		{
+			return connection != null? connection.GetValue () : null;
+		}
 
 		/// <summary>
 		/// Gets the value of the connection or null. If possible, use strongly typed version instead.
@@ -104,7 +121,7 @@ namespace NodeEditorFramework
 		/// </summary>
 		public T GetValue<T> ()
 		{
-			return connection != null? connection.GetValue<T> () : NodeOutput.GetDefault<T> ();
+			return connection != null? connection.GetValue<T> () : TypeSelector.GetDefault<T> ();
 		}
 
 		/// <summary>
@@ -125,8 +142,11 @@ namespace NodeEditorFramework
 		/// </summary>
 		public bool CanApplyConnection (NodeOutput output)
 		{
-			if (output == null || body == output.body || connection == output || typeData.Type != output.typeData.Type)
+			if (output == null || body == output.body || connection == output || !typeData.Type.IsAssignableFrom (output.typeData.Type)) 
+			{
+//				Debug.LogError ("Cannot assign " + typeData.Type.ToString () + " to " + output.typeData.Type.ToString ());
 				return false;
+			}
 
 			if (output.body.isChildOf (body)) 
 			{ // Recursive
@@ -156,7 +176,11 @@ namespace NodeEditorFramework
 			connection = output;
 			output.connections.Add (this);
 
-			NodeEditor.RecalculateFrom (body);
+			if (!output.body.calculated)
+				NodeEditor.RecalculateFrom (output.body);
+			else
+				NodeEditor.RecalculateFrom (body);
+			
 			output.body.OnAddOutputConnection (output);
 			body.OnAddInputConnection (this);
 			NodeEditorCallbacks.IssueOnAddConnection (this);

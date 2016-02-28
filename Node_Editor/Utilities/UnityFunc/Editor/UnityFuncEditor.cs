@@ -17,8 +17,7 @@ namespace NodeEditorFramework.Utilities
 		{
 			EditorGUI.BeginProperty (pos, label, property);
 
-			SerializedProperty callStateProp = property.FindPropertyRelative ("callState");
-			SerializedProperty methodNameProp = property.FindPropertyRelative ("_methodName");
+			SerializedProperty methodNameProp = property.FindPropertyRelative ("_commandName");
 			SerializedProperty argumentsProp = property.FindPropertyRelative ("_argumentTypes");
 			SerializedProperty targetObjProp = property.FindPropertyRelative ("_targetObject");
 
@@ -29,7 +28,6 @@ namespace NodeEditorFramework.Utilities
 				arguments += argumentsProp.GetArrayElementAtIndex (argCnt).FindPropertyRelative ("argAssemblyTypeName").stringValue + (argCnt < argumentsProp.arraySize-1? ", " : "");
 			GUI.Label (gridRects[0], new GUIContent (label.text + " (" + arguments + ")"));
 
-			callStateProp.enumValueIndex = System.Convert.ToInt32 (EditorGUI.EnumPopup (gridRects[1], (UnityEventCallState)callStateProp.enumValueIndex));
 			targetObjProp.objectReferenceValue = EditorGUI.ObjectField (gridRects[2], targetObjProp.objectReferenceValue, typeof(Object), true);
 			methodNameProp.stringValue = EditorGUI.TextField (gridRects[3], methodNameProp.stringValue);
 

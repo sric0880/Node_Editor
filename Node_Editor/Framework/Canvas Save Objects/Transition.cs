@@ -69,6 +69,10 @@ namespace NodeEditorFramework
 			fromNode.transitions.Add (transition);
 			toNode.transitions.Add (transition);
 
+			fromNode.OnAddTransition (transition);
+			toNode.OnAddTransition (transition);
+			NodeEditorCallbacks.IssueOnAddTransition (transition);
+
 			return transition;
 		}
 

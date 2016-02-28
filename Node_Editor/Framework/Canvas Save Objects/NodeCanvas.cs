@@ -11,5 +11,7 @@ namespace NodeEditorFramework
 		// current states in the state system
 		public Node currentNode;
 		public Transition currentTransition;
+
+		public bool livesInScene = false;
 	}
 }

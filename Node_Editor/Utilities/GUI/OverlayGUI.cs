@@ -46,7 +46,8 @@ namespace NodeEditorFramework.Utilities
 		
 		// State
 		private Rect position;
-		private string selectedPath = "";
+		private MenuItem selectedItem;
+		private string selectedPath;
 		private MenuItem groupToDraw;
 		private float currentItemHeight;
 		private bool close;
@@ -75,7 +76,8 @@ namespace NodeEditorFramework.Utilities
 		
 		public void Show (Vector2 pos)
 		{
-			position = new Rect (pos.x, pos.y, 0f, 0f);
+			position = calculateRect (pos, menuItems);
+			selectedItem = null;
 			selectedPath = "";
 			OverlayGUI.currentPopup = this;
 		}
@@ -121,16 +123,19 @@ namespace NodeEditorFramework.Utilities
 				string folderPath = subContents[0];
 				
 				// top level group
-				MenuItem parent = menuItems.Find ((MenuItem item) => item.content != null && item.content.text == folderPath);
+				MenuItem parent = menuItems.Find ((MenuItem item) => item.content != null && item.content.text == folderPath && item.group);
 				if (parent == null)
 					menuItems.Add (parent = new MenuItem (folderPath, new GUIContent (folderPath), true));
-				
 				// additional level groups
 				for (int groupCnt = 1; groupCnt < subContents.Length-1; groupCnt++)
 				{
 					string folder = subContents[groupCnt];
 					folderPath += "/" + folder;
-					MenuItem subGroup = parent.subItems.Find ((MenuItem item) => item.content != null && item.content.text == folder);
+					if (parent == null)
+						Debug.LogError ("Parent is null!");
+					else if (parent.subItems == null)
+						Debug.LogError ("Subitems of " + parent.content.text + " is null!");
+					MenuItem subGroup = parent.subItems.Find ((MenuItem item) => item.content != null && item.content.text == folder && item.group);
 					if (subGroup == null)
 						parent.subItems.Add (subGroup = new MenuItem (folderPath, new GUIContent (folder), true));
 					parent = subGroup;
@@ -163,9 +168,11 @@ namespace NodeEditorFramework.Utilities
 				}
 			}
 			
-			if (!inRect || close)
+			if (!inRect || close) 
+			{
 				OverlayGUI.currentPopup = null;
-			
+			}
+
 			NodeEditorFramework.NodeEditor.RepaintClients ();
 		}
 		
@@ -179,7 +186,7 @@ namespace NodeEditorFramework.Utilities
 			clickRect.yMax += 20;
 			clickRect.yMin -= 20;
 			bool inRect = clickRect.Contains (Event.current.mousePosition);
-			
+
 			currentItemHeight = backgroundStyle.contentOffset.y;
 			GUI.BeginGroup (extendRect (rect, backgroundStyle.contentOffset), GUIContent.none, backgroundStyle);
 			for (int itemCnt = 0; itemCnt < menuItems.Count; itemCnt++)
@@ -203,14 +210,14 @@ namespace NodeEditorFramework.Utilities
 			else 
 			{
 				Rect labelRect = new Rect (backgroundStyle.contentOffset.x, currentItemHeight, groupRect.width, itemHeight);
-				
-				bool selected = selectedPath.Contains (item.path);
-				if (labelRect.Contains (Event.current.mousePosition))
+
+				if (labelRect.Contains (Event.current.mousePosition)) 
 				{
 					selectedPath = item.path;
-					selected = true;
+					selectedItem = item;
 				}
-				
+
+				bool selected = selectedPath.Contains (item.path);
 				GUI.Label (labelRect, item.content, selected? selectedLabel : GUI.skin.label);
 				
 				if (item.group) 
@@ -340,7 +347,25 @@ namespace NodeEditorFramework.Utilities
 		
 		public void ShowAsContext ()
 		{
-			popup.Show (new Vector2 (Event.current.mousePosition.x, Event.current.mousePosition.y));
+			Vector2 mousePos = Event.current.mousePosition;
+//			Debug.Log ("ShowAsContext! MousePos: " + mousePos.ToString ());
+//
+//			Vector2 guiMousePos = GUIScaleUtility.ScaledToGUISpace (mousePos);
+//			Debug.Log ("ShowAsContext! MousePos->ScaledToGUISpace: " + guiMousePos.ToString ());
+//
+			Vector2 screenMousePos = GUIScaleUtility.GUIToScreenSpace (mousePos);
+//			Debug.Log ("ShowAsContext! MousePos->GUIToScreenSpace: " + screenMousePos.ToString ());
+//
+//			Vector2 scaledMousePos = GUIScaleUtility.GUIToScaledSpace (mousePos);
+//			Debug.Log ("ShowAsContext! MousePos->GUIToScaledSpace: " + scaledMousePos.ToString ());
+//
+//			Vector2 screenGuiMousePos = GUIScaleUtility.ScaledToGUISpace (screenMousePos);
+//			Debug.Log ("ShowAsContext! MousePos->GUIToScreenSpace->ScaledToGUISpace: " + screenGuiMousePos.ToString ());
+//
+//			Vector2 guiScreenMousePos = GUIScaleUtility.GUIToScreenSpace (guiMousePos);
+//			Debug.Log ("ShowAsContext! MousePos->ScaledToGUISpace->GUIToScreenSpace: " + guiScreenMousePos.ToString ());
+
+			popup.Show (screenMousePos);
 		}
 
 		public void Show (Vector2 pos)
