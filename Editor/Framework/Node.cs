@@ -223,23 +223,22 @@ namespace NodeEditorFramework
 			// Create a rect that is adjusted to the editor zoom
 			Rect nodeRect = rect;
 			nodeRect.position += NodeEditor.curEditorState.zoomPanAdjust + NodeEditor.curEditorState.panOffset;
-			contentOffset = new Vector2 (0, 20);
+			contentOffset = new Vector2(0, 40);
 
-			// Create a headerRect out of the previous rect and draw it, marking the selected node as such by making the header bold
-			Rect headerRect = new Rect (nodeRect.x, nodeRect.y, nodeRect.width, contentOffset.y);
-			GUI.Label (headerRect, name, NodeEditor.curEditorState.selectedNode == this? NodeEditorGUI.nodeBoxBold : NodeEditorGUI.nodeBox);
+			GUI.BeginGroup(nodeRect, GUI.skin.box);
+
+			Rect headerRect = new Rect(0, 0, nodeRect.width, contentOffset.y);
+			GUILayout.BeginArea(headerRect, NodeEditorGUI.nodeBoxHeader2);
+			GUI.Label(headerRect, name, NodeEditor.curEditorState.selectedNode == this ? NodeEditorGUI.nodeLabelBold : NodeEditorGUI.nodeLabel);
+			GUILayout.EndArea();
 
 			// Begin the body frame around the NodeGUI
-			Rect bodyRect = new Rect (nodeRect.x, nodeRect.y + contentOffset.y, nodeRect.width, nodeRect.height - contentOffset.y);
-			GUI.BeginGroup (bodyRect, GUI.skin.box);
-			bodyRect.position = Vector2.zero;
-			GUILayout.BeginArea (bodyRect, GUI.skin.box);
-			// Call NodeGUI
 			GUI.changed = false;
-			NodeGUI ();
-			// End NodeGUI frame
-			GUILayout.EndArea ();
-			GUI.EndGroup ();
+			Rect bodyRect = new Rect(0, contentOffset.y, nodeRect.width, nodeRect.height - contentOffset.y);
+			GUILayout.BeginArea(bodyRect, NodeEditorGUI.nodeBoxBody);
+			NodeGUI();
+			GUILayout.EndArea();
+			GUI.EndGroup();
 		}
 
 		/// <summary>
